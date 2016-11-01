@@ -1,0 +1,145 @@
+---
+title: "Practical Machine Learning Course Project Report"
+author: "Eduardo"
+date: "1st November 2016"
+output: html_document
+---
+
+
+Data Processing
+---------------
+Set libraries used in this analysis
+```{r loadLibraries, warning=FALSE, results="hide", message=FALSE}
+library(caret)
+library(rpart.plot)
+library(rattle)
+library(AppliedPredictiveModeling)
+library(randomForest)
+```
+
+First, the training data is downloaded from the following URL:
+```{r}
+#url_raw_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+file_dest_training <- "pml-training.csv"
+#download.file(url=url_raw_training, destfile=file_dest_training, method="curl")
+#url_raw_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+file_dest_testing <- "pml-testing.csv"
+#download.file(url=url_raw_testing, destfile=file_dest_testing, method="curl")
+```
+
+Import the data treating empty values as NA.
+```{r}
+df_training <- read.csv(file_dest_training, na.strings=c("NA",""), header=TRUE)
+colnames_train <- colnames(df_training)
+df_testing <- read.csv(file_dest_testing, na.strings=c("NA",""), header=TRUE)
+colnames_test <- colnames(df_testing)
+```
+
+Verify that the column names (excluding classe and problem_id) are identical in the training and test set.
+```{r}
+all.equal(colnames_train[1:length(colnames_train)-1], colnames_test[1:length(colnames_train)-1])
+```
+
+Cleaning data
+-------------
+Count the number of non-NAs in each col:
+```{r}
+nonNAs <- function(x) {
+    as.vector(apply(x, 2, function(x) length(which(!is.na(x)))))
+}
+```
+
+Build vector of missing data or NA columns to drop.
+```{r}
+colcnts <- nonNAs(df_training)
+drops <- c()
+for (cnt in 1:length(colcnts)) {
+    if (colcnts[cnt] < nrow(df_training)) {
+        drops <- c(drops, colnames_train[cnt])
+    }
+}
+```
+
+Drop NA data and the first 7 columns as they're unnecessary for predicting.
+```{r}
+df_training <- df_training[,!(names(df_training) %in% drops)]
+df_training <- df_training[,8:length(colnames(df_training))]
+
+df_testing <- df_testing[,!(names(df_testing) %in% drops)]
+df_testing <- df_testing[,8:length(colnames(df_testing))]
+```
+
+Show remaining columns.
+```{r}
+colnames(df_training)
+
+colnames(df_testing)
+```
+
+First, check for covariates that have virtually no variablility.
+```{r}
+nsv <- nearZeroVar(df_training, saveMetrics=TRUE)
+nsv
+```
+Given the results obtained, there's no need to eliminate any covariates due to lack of variablility.
+
+Algortihm
+---------
+
+Partioning Training data set into two data sets, 60% for myTraining, 40% for myTesting:
+```{r}
+inTrain <- createDataPartition(y=df_training$classe, p=0.6, list=FALSE)
+myTraining <- df_training[inTrain, ]; myTesting <- df_training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+```
+
+Using ML algorithms for prediction: Decision Tree
+-------------------------------------------------
+
+```{r}
+
+modFitA1 <- rpart(classe ~ ., data=myTraining, method="class")
+fancyRpartPlot(modFitA1)
+predictionsA1 <- predict(modFitA1, myTesting, type = "class")
+```
+
+Using confusion Matrix to test results:
+```{r}
+confusionMatrix(predictionsA1, myTesting$classe)
+```
+
+
+Using ML algorithms for prediction: Random Forests
+--------------------------------------------------
+```{r}
+modFitB1 <- randomForest(classe ~. , data=myTraining)
+```
+Predicting in-sample error:
+```{r}
+predictionsB1 <- predict(modFitB1, myTesting, type = "class")
+```
+Using confusion Matrix to test results:
+```{r}
+confusionMatrix(predictionsB1, myTesting$classe)
+```
+The results from the Random Forests are much better than the results from the decision tree.
+
+Generating Files to submit as answers for the Assignment:
+--------------------------------------------------------
+Finally, using the provided Test Set out-of-sample error.
+For Random Forests we use the following formula, which yielded a much better prediction in in-sample:
+```{r}
+predictionsB2 <- predict(modFitB1, df_testing, type = "class")
+```
+Function to generate files with predictions to submit for assignment
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictionsB2)
+```
